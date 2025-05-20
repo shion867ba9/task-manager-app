@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>プロジェクト詳細: {{ project.name }}</h2>
+<p>概要: {{ project.description }}</p>
+<div class="mb-3">
+  <!-- <label>進捗：</label> -->
+  <p>進捗: {{ project.progress }}%</p>
+  <div class="progress" style="height: 24px;">
+    <div class="progress-bar" role="progressbar" style="width: {{ progress }}%;" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100">
+      {{ progress }}%
+    </div>
+  </div>
+</div>
+<p>状態: {{ project.status }}</p>
+<p>期間: {{ project.scheduled_start }} ～ {{ project.scheduled_end }}</p>
+
+<hr>
+<h3>テーマ一覧</h3>
+<a href="{{ url_for('new_theme', project_id=project.id) }}" class="btn btn-success btn-sm">このプロジェクトにテーマ追加</a>
+<table class="table">
+  <thead>
+    <tr><th>ID</th><th>名称</th><th>進捗</th><th>操作</th></tr>
+  </thead>
+  <tbody>
+    {% for th in themes %}
+    <tr>
+      <td>{{ th.id }}</td>
+      <td><a href="{{ url_for('theme_detail', theme_id=th.id) }}">{{ th.name }}</a></td>
+      <td>{{ th.progress }}%</td>
+      <td>
+        <a href="{{ url_for('edit_theme', theme_id=th.id) }}" class="btn btn-info btn-sm">編集</a>
+        <a href="{{ url_for('delete_theme', theme_id=th.id) }}" class="btn btn-danger btn-sm"
+           onclick="return confirm('本当に削除しますか？')">削除</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

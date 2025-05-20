@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>作業実績記録</h2>
+<form method="post">
+    <input type="hidden" name="log_id" value="{{ worklog.id }}">
+    <input type="hidden" name="task_id" value="{{ selected_task.id if selected_task else '' }}">
+    <div class="form-group">
+        <label>予定タスク</label>
+            <select name="task_id" class="form-control">
+                <option value="">--フリーログ--</option>
+                {% for t in tasks %}
+                <option value="{{ t.id }}"
+                    {% if selected_task and selected_task.id == t.id %}selected{% endif %}>
+                    {{ t.title }} ({{ t.scheduled_start }})
+                </option>
+                {% endfor %}
+            </select>
+    </div>
+    <div class="form-group">
+        <label>開始日時</label>
+        <input type="datetime-local" name="start_at" class="form-control" required value="{{ selected_start }}">
+    </div>
+    <div class="form-group">
+        <label>終了日時</label>
+        <input type="datetime-local" name="end_at" class="form-control">
+    </div>
+    <div class="form-group">
+        <label>ステータス</label>
+        <select name="status" class="form-control">
+            <option value="実績">実績</option>
+            <option value="割込み">割込み</option>
+            <option value="MTG">MTG</option>
+            <option value="フリーログ">フリーログ</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>メモ</label>
+        <textarea name="memo" class="form-control"></textarea>
+    </div>
+    <div class="form-group mt-3">
+        <button type="submit" class="btn btn-primary">記録</button>
+        {% if worklog and worklog.id %}
+            <a href="{{ url_for('worklog_page', worklog_id=worklog.id) }}" class="btn btn-info ml-2" target="_blank">作業ページを開く</a>
+        {% endif %}
+    </div>
+    <!-- <button type="submit" class="btn btn-primary">記録</button> -->
+</form>
+
+
+<script>
+    // Pythonから渡されたtasks, projects, themes情報をJavascriptの連想配列に変換
+    var taskProjectMap = {
+        {% for t in tasks %}
+            "{{ t.id }}": {
+                project: "{{ t.project.name if t.project else '' }}",
+                theme: "{{ t.theme.name if t.theme else '' }}"
+            },
+        {% endfor %}
+    };
+
+    function updateProjectTheme() {
+        var taskId = document.getElementById('task-select').value;
+        if (taskId && taskProjectMap[taskId]) {
+            document.getElementById('project-name').value = taskProjectMap[taskId].project;
+            document.getElementById('theme-name').value = taskProjectMap[taskId].theme;
+        } else {
+            document.getElementById('project-name').value = '';
+            document.getElementById('theme-name').value = '';
+        }
+    }
+    document.getElementById('task-select').addEventListener('change', updateProjectTheme);
+
+    // 初期化
+    window.onload = updateProjectTheme;
+    
+</script>
+{% endblock %}

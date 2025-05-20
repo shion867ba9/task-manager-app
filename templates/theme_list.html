@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>テーマ一覧</h2>
+<a href="{{ url_for('new_theme') }}" class="btn btn-primary mb-2">新規テーマ作成</a>
+<table class="table table-bordered">
+  <thead>
+    <tr>
+      <th>ID</th><th>名称</th><th>概要</th><th>進捗</th><th>状態</th><th>プロジェクト</th><th>期間</th><th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for th in themes %}
+    <tr>
+      <td>{{ th.id }}</td>
+      <td><a href="{{ url_for('theme_detail', theme_id=th.id) }}">{{ th.name }}</a></td>
+      <td>{{ th.description }}</td>
+      <td>{{ th.progress }}%</td>
+      <td>{{ th.status }}</td>
+      <td>
+        {{ th.project.name if th.project_id and projects[th.project_id] else '' }}
+      </td>
+      <td>
+        {{ th.scheduled_start or '' }} ～ {{ th.scheduled_end or '' }}
+      </td>
+      <td>
+        <a href="{{ url_for('edit_theme', theme_id=th.id) }}" class="btn btn-sm btn-info">編集</a>
+        <a href="{{ url_for('delete_theme', theme_id=th.id) }}" class="btn btn-sm btn-danger"
+           onclick="return confirm('本当に削除しますか？')">削除</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,225 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>ガントチャート</h2>
+
+<!-- head内に追加 -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<!--  プロジェクト絞り込み -->
+<div class="mb-2">
+  <label for="project-select">プロジェクト選択：</label>
+  <select id="project-select" class="form-control select2" style="width:200px; display:inline-block;">
+    <option value="">全プロジェクト</option>
+    {% for pj in projects %}
+    <option value="{{ pj.id }}">{{ pj.name }}</option>
+    {% endfor %}
+  </select>
+</div>
+
+<!-- 粒度切替タブ -->
+<ul class="nav nav-tabs mb-2" id="ganttTab">
+  <li class="nav-item"><a class="nav-link active" data-level="all" href="#">全て</a></li>
+  <li class="nav-item"><a class="nav-link" data-level="project" href="#">プロジェクト</a></li>
+  <li class="nav-item"><a class="nav-link" data-level="theme" href="#">テーマ</a></li>
+  <li class="nav-item"><a class="nav-link" data-level="task" href="#">タスク</a></li>
+</ul>
+
+<!-- タイムスケール切替ボタン -->
+<div class="btn-group mb-3">
+  <button class="btn btn-secondary" onclick="setViewMode('Hour')">1時間単位</button>
+  <button class="btn btn-secondary" onclick="setViewMode('Quarter Day')">6時間単位</button>
+  <button class="btn btn-secondary" onclick="setViewMode('Half Day')">12時間単位</button>
+  <button class="btn btn-secondary" onclick="setViewMode('Day')">日</button>
+  <button class="btn btn-secondary" onclick="setViewMode('Week')">週</button>
+  <button class="btn btn-secondary" onclick="setViewMode('Month')">月</button>
+</div>
+
+<!-- 検索窓 -->
+<input type="text" id="ganttFilter" class="form-control mb-2" placeholder="タスク名・キーワード検索">
+
+<!-- ガント本体 -->
+<div id="gantt" style="width:100%; min-height:600px;"></div>
+
+{% endblock %}
+
+<!-- 編集用モーダル -->
+<div class="modal fade" id="editTaskModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <form id="editTaskForm" method="post">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">タスク編集</h5>
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="task_id" id="edit_task_id">
+          <input type="text" name="title" id="edit_title" class="form-control mb-2" required>
+          <textarea name="detail" id="edit_detail" class="form-control mb-2"></textarea>
+          <input type="datetime-local" name="scheduled_start" id="edit_scheduled_start" class="form-control mb-2">
+          <input type="datetime-local" name="scheduled_end" id="edit_scheduled_end" class="form-control mb-2">
+          <input type="number" name="weight" id="edit_weight" class="form-control mb-2">
+          <select name="status" id="edit_status" class="form-control mb-2">
+            <option value="未着手">未着手</option>
+            <option value="進行中">進行中</option>
+            <option value="完了">完了</option>
+            <option value="凍結">凍結</option>
+          </select>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="is_completed" id="edit_is_completed">
+            <label class="form-check-label" for="edit_is_completed">完了</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-success">保存</button>
+          <button type="button" id="deleteTaskBtn" class="btn btn-danger float-left">削除</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% block scripts %}
+<style>
+#gantt {
+    padding-bottom: 30px;
+    min-height: 400px;
+    max-width: 100vw;
+    overflow-y: visible !important; /* スクロール抑制 */
+}
+.project-bar { fill: #1e90ff !important; }
+.theme-bar   { fill: #f9b115 !important; }
+.task-bar    { fill: #8bc34a !important; }
+/* プロジェクト毎の色指定、Jinjaで自動生成 */
+{% for pj in projects %}
+.project-color-{{ pj.id }} .bar { fill: {{ pj.color }} !important; }
+{% endfor %}
+.project-color-0 .bar { fill: #d3d3d3 !important; }
+
+</style>
+<script>
+let gantt = null;
+let currentLevel = "all";  // 現在の粒度
+let currentMode = "Day";   // 現在のビュー
+let currentProject = "";     // 現在のプロジェクトid
+let allData = [];
+
+function drawGantt(data, mode) {
+    // 高さをタスク数で自動決定
+    let height = Math.max(400, data.length * 40 + 100);
+    $('#gantt').height(height);
+
+    document.getElementById('gantt').innerHTML = "";
+    gantt = new Gantt("#gantt", data, {
+        view_mode: mode,
+        custom_popup_html: function(task) {
+            return `
+            <div class="details-container p-2">
+                <b>${task.name}</b><br>
+                <b>進捗:</b> ${task.progress}%<br>
+                <b>期間:</b> ${task.start} ~ ${task.end}<br>
+                <b>ステータス:</b> ${task.status || "-"}
+            </div>`;
+        },
+        on_click: function(task) {
+            // 編集モーダル開く
+            var id = task.id.replace('task-', '');
+            $.get('/api/task/' + id, function(data) {
+                $('#edit_task_id').val(data.id);
+                $('#edit_title').val(data.title);
+                $('#edit_detail').val(data.detail);
+                $('#edit_scheduled_start').val(data.scheduled_start ? data.scheduled_start.slice(0,16) : "");
+                $('#edit_scheduled_end').val(data.scheduled_end ? data.scheduled_end.slice(0,16) : "");
+                $('#edit_weight').val(data.weight);
+                $('#edit_status').val(data.status);
+                $('#edit_is_completed').prop('checked', data.is_completed);
+                $('#editTaskModal').modal('show');
+            });
+        }
+    });
+
+}
+
+function reloadGantt() {
+    let projectId = $('#project-select').val() || "";
+    currentProject = projectId;
+    let url = `/api/gantt?level=${currentLevel}`;
+    if (projectId) url += `&project_id=${projectId}`;
+    $.getJSON(url, function(data) {
+        allData = data;
+        drawGantt(allData, currentMode);
+    });
+}
+
+$(function() {
+    $('#project-select').select2({
+        placeholder: 'プロジェクト検索',
+        allowClear: true,
+        width: 'resolve'
+    });
+});
+
+$(function() {
+    // セレクトボックス動的生成
+    $.getJSON('/api/projects', function(projects) {
+        let sel = $('#project-select');
+        sel.empty();
+        sel.append(`<option value="">全プロジェクト</option>`);
+        for (let pj of projects) {
+            sel.append(`<option value="${pj.id}">${pj.name}</option>`);
+        }
+    });
+
+    // プロジェクトセレクト
+    $('#project-select').on('change', function() {
+        reloadGantt();
+    });
+  // 粒度切替
+  $('#ganttTab .nav-link').on('click', function(e) {
+      e.preventDefault();
+      $('#ganttTab .nav-link').removeClass('active');
+      $(this).addClass('active');
+      currentLevel = $(this).data('level');
+      reloadGantt();
+  });
+  // タイムスケール切替
+  window.setViewMode = function(mode) {
+      currentMode = mode;
+      drawGantt(allData, currentMode);
+  };
+  // 検索
+  $('#ganttFilter').on('input', function() {
+      const keyword = $(this).val().toLowerCase();
+      const filtered = allData.filter(task =>
+          task.name.toLowerCase().includes(keyword)
+      );
+      drawGantt(filtered, currentMode);
+  });
+
+  // 編集保存
+  $('#editTaskForm').on('submit', function(e) {
+      e.preventDefault();
+      var taskId = $('#edit_task_id').val();
+      var postData = $(this).serialize();
+      $.post('/task/update/' + taskId, postData, function() {
+          $('#editTaskModal').modal('hide');
+          reloadGantt();
+      });
+  });
+  // 削除
+  $('#deleteTaskBtn').on('click', function() {
+      var taskId = $('#edit_task_id').val();
+      if(confirm('本当に削除しますか？')) {
+          $.post('/api/task/delete/' + taskId, function() {
+              $('#editTaskModal').modal('hide');
+              reloadGantt();
+          });
+      }
+  });
+  // 初期ロード
+  $(document).ready(function() {
+      reloadGantt();
+  });
+});
+</script>
+{% endblock %}

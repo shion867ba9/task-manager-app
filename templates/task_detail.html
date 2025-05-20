@@ -1,0 +1,16 @@
+<!-- task_detail.html の該当箇所 -->
+<h3>作業実績</h3>
+<table class="table table-bordered">
+    <thead><tr><th>開始</th><th>終了</th><th>ステータス</th><th>メモ</th></tr></thead>
+    <tbody>
+        {% for log in task.worklogs %}
+        <tr>
+            <td>{{ log.start_at }}</td>
+            <td>{{ log.end_at }}</td>
+            <td>{{ log.status }}</td>
+            <td>{{ log.memo }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<a href="{{ url_for('add_worklog', task_id=task.id) }}" class="btn btn-sm btn-success">作業実績追加</a>

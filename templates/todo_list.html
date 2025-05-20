@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>ToDoリスト</h2>
+
+<!-- # フィルター部分 -->
+<div class="mb-3">
+  <label>重要度フィルタ: 
+    <select id="importance-filter" class="form-control d-inline-block" style="width:100px;">
+      <option value="">全て</option>
+      <option value="5">5</option>
+      <option value="4">4以上</option>
+      <option value="3">3以上</option>
+    </select>
+  </label>
+  <label class="ml-2">プロジェクト: 
+    <select id="project-filter" class="form-control d-inline-block" style="width:150px;">
+      <option value="">全て</option>
+      {% for pj in projects %}
+      <option value="{{ pj.id }}">{{ pj.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</div>
+
+<!-- <table class="table"> -->
+<table id="todo-table" class="table table-striped">
+  <thead>
+    <tr>
+      <th>タイトル</th>
+      <th>重要度</th>
+      <th>開始予定</th>
+      <th>プロジェクト</th>
+      <th>ステータス</th>
+      <th>詳細</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr>
+      <td>{{ task.title }}</td>
+      <td>{{ task.importance or 3 }}</td>
+      <td>{{ task.scheduled_start.strftime('%Y-%m-%d %H:%M') if task.scheduled_start else '' }}</td>
+      <td>{{ project_map[task.project_id] if task.project_id in project_map else '未割当' }}</td>
+      <td>{{ task.status }}</td>
+      <td>{{ task.detail or '' }}</td>
+      <td>
+        <a href="{{ url_for('new_worklog') }}?task_id={{ task.id }}&start_at={{ task.scheduled_start.strftime('%Y-%m-%dT%H:%M') if task.scheduled_start else '' }}" class="btn btn-primary btn-sm">実績記録</a>
+        <a href="{{ url_for('edit_task', task_id=task.id) }}" class="btn btn-secondary btn-sm">編集</a>
+        {% if task.worklogs|length > 0 %}
+            <!-- worklogs[0]が最新や最初の作業実績。用途に合わせて変更 -->
+            <a href="{{ url_for('worklog_page', worklog_id=task.worklogs[0].id) }}" class="btn btn-info btn-sm">作業ページ</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script>
+$(function(){
+  var table = $('#todo-table').DataTable({
+    order: [[2, 'asc']],
+    pageLength: 50,
+    dom: 'lrtip'
+  });
+
+  $.fn.dataTable.ext.search.push(
+    function(settings, data, dataIndex) {
+      // 重要度
+      var impVal = $('#importance-filter').val();
+      var importance = parseInt(data[1], 10);
+      // プロジェクト
+      var pjVal = $('#project-filter').val();
+      var projectName = data[3];
+
+      // 重要度
+      if (impVal === "5" && importance !== 5) return false;
+      if (impVal === "4" && importance < 4) return false;
+      if (impVal === "3" && importance < 3) return false;
+
+      // プロジェクト
+      if (pjVal && projectName !== $('#project-filter option:selected').text()) return false;
+
+      return true;
+    }
+  );
+
+  $('#importance-filter, #project-filter').on('change', function(){
+    table.draw();
+  });
+});
+</script>
+{% endblock %}

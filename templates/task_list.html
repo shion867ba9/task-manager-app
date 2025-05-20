@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>タスク一覧</h2>
+<a href="{{ url_for('create_task') }}" class="btn btn-primary mb-2">新規タスク作成</a>
+<table class="table table-bordered">
+  <thead>
+    <tr>
+      <th>ID</th><th>タイトル</th><th>プロジェクト</th><th>テーマ</th><th>開始</th><th>終了</th><th>状態</th><th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr>
+      <td>{{ task.id }}</td>
+      <td>{{ task.title }}</td>
+      <td>{{ task.project.name if task.project_id and task.project else '' }}</td>
+      <td>{{ task.theme.name if task.theme_id and task.theme else '' }}</td>
+      <td>{{ task.scheduled_start }}</td>
+      <td>{{ task.scheduled_end }}</td>
+      <td>{{ task.status }}</td>
+      <td>
+        <a href="{{ url_for('edit_task', task_id=task.id) }}" class="btn btn-info btn-sm">編集</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

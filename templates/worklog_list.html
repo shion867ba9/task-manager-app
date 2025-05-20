@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>作業実績一覧</h3>
+<table class="table table-striped table-sm">
+  <thead>
+    <tr>
+      <th>id</th>
+      <th>作業日</th>
+      <th>開始</th>
+      <th>終了</th>
+      <th>工数(h)</th>
+      <th>タスク</th>
+      <th>ステータス</th>
+      <th>メモ</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for log in logs %}
+    <tr>
+      <td>{{ log.id }}</td>
+      <td>{{ log.start_at.strftime("%Y-%m-%d") if log.start_at else "" }}</td>
+      <td>{{ log.start_at.strftime("%H:%M") if log.start_at else "" }}</td>
+      <td>{{ log.end_at.strftime("%H:%M") if log.end_at else "" }}</td>
+      <td>
+        {% if log.start_at and log.end_at %}
+          {{ ((log.end_at - log.start_at).total_seconds() / 3600)|round(2) }}
+        {% else %}
+          -
+        {% endif %}
+      </td>
+      <td>
+        {{ task_map[log.task_id].title if log.task_id in task_map else "(タスクなし)" }}
+      </td>
+      <td>{{ log.status }}</td>
+      <td>{{ log.memo }}</td>
+      <td>
+        <a href="{{ url_for('edit_worklog', worklog_id=log.id) }}" class="btn btn-sm btn-secondary">編集</a>
+        <form action="{{ url_for('delete_worklog', worklog_id=log.id) }}" method="post" style="display:inline;">
+          <button class="btn btn-sm btn-danger" onclick="return confirm('削除しますか？')">削除</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<a href="{{ url_for('new_worklog') }}" class="btn btn-primary">新規作業実績追加</a>
+{% endblock %}

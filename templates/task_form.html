@@ -1,0 +1,69 @@
+<!-- templates/task_form.html -->
+{% extends 'base.html' %}
+{% block content %}
+<h2>{{ task.id if task else '新規' }}タスク作成・編集</h2>
+<form method="post">
+  <div class="form-group">
+    <label>プロジェクト</label>
+    <select name="project_id" class="form-control">
+      <option value="">-- プロジェクト未指定 --</option>
+      {% for project in projects %}
+        <option value="{{ project.id }}"
+          {% if project.id|string == selected_project_id|string %}selected{% endif %}>
+          {{ project.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>テーマ</label>
+    <select name="theme_id" class="form-control">
+      <option value="">-- テーマ未指定 --</option>
+      {% for theme in themes %}
+        <option value="{{ theme.id }}"
+          {% if theme.id|string == selected_theme_id|string %}selected{% endif %}>
+          {{ theme.name }}{% if theme.project_id %}（{{ theme.project.name }}）{% endif %}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>タイトル</label>
+    <input type="text" name="title" class="form-control" required value="{{ task.title if task else '' }}">
+  </div>
+  <div class="form-group">
+    <label>詳細</label>
+    <textarea name="detail" class="form-control">{{ task.detail if task else '' }}</textarea>
+  </div>
+  <div class="form-group">
+    <label>開始予定日時</label>
+    <input type="datetime-local" name="scheduled_start" class="form-control"
+      value="{{ task.scheduled_start.isoformat()[:16] if task and task.scheduled_start else '' }}">
+  </div>
+  <div class="form-group">
+    <label>終了予定日時</label>
+    <input type="datetime-local" name="scheduled_end" class="form-control"
+      value="{{ task.scheduled_end.isoformat()[:16] if task and task.scheduled_end else '' }}">
+  </div>
+  <div class="form-group">
+    <label>重み</label>
+    <input type="number" name="weight" class="form-control" value="{{ task.weight if task else 10 }}">
+  </div>
+  <div class="form-group">
+    <label>ステータス</label>
+    <select name="status" class="form-control">
+      {% for s in ['未着手', '進行中', '完了', '凍結'] %}
+        <option value="{{ s }}"
+          {% if task and task.status == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" name="is_completed" id="is_completed"
+      {% if task and task.is_completed %}checked{% endif %}>
+    <label class="form-check-label" for="is_completed">完了</label>
+  </div>
+  <button type="submit" class="btn btn-primary">保存</button>
+  <a href="{{ url_for('calendar_view') }}" class="btn btn-secondary">キャンセル</a>
+</form>
+{% endblock %}

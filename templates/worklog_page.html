@@ -1,0 +1,565 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>作業実績：{{ worklog.task.title if worklog.task else '' }}</h2>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<div class="mb-3">
+  <label>作業時刻： </label>
+  <button id="start-btn" class="btn btn-success">作業開始</button>
+  <span id="start-time">{{ worklog.start_at or "未記録" }}</span>
+  <button id="end-btn" class="btn btn-danger">作業終了</button>
+  <span id="end-time">{{ worklog.end_at or "未記録" }}</span>
+  <!-- <span id="timer-display" class="mx-3">00:00</span> -->
+</div>
+
+<!-- Pomodoroタイマーコンポーネント -->
+<div id="pomodoro-config-panel" style="margin-bottom:2em;">
+  <!-- タイマー本体はここに置く（visibleなら表示、非表示なら消える） -->
+  <div id="pomodoro-timer-box" style="margin-bottom:1em;">
+    <div class="d-flex align-items-center">
+      <div id="pomodoro-time" style="font-size:2.5em;font-weight:bold;min-width:120px;">25:00</div>
+      <div class="ml-4" style="font-size:1.2em;">セット: <span id="pomodoro-lap">1</span>/<span id="pomodoro-max-lap">4</span></div>
+      <button id="pomodoro-config-btn" class="btn btn-light ml-4" title="設定"><span>⚙️</span></button>
+      <button id="pomodoro-startstop-btn" class="btn btn-success ml-2" title="開始/停止"><span id="pomodoro-ss-icon">▶️</span></button>
+      <button id="pomodoro-reset-btn" class="btn btn-danger ml-2" title="リセット"><span>🔄</span></button>
+    </div>
+  </div>
+  <!-- 設定パネル（常時表示） -->
+  <div id="pomodoro-config-modal" style="display:none; margin-top:1em;">
+    <label>作業時間（分）：<input type="number" id="pomodoro-work" value="25" min="1" style="width:4em;"></label>
+    <label class="ml-2">休憩時間（分）：<input type="number" id="pomodoro-break" value="5" min="1" style="width:4em;"></label>
+    <label class="ml-2">セット数：<input type="number" id="pomodoro-sets" value="4" min="1" style="width:3em;"></label>
+    <button id="pomodoro-save-btn" class="btn btn-sm btn-primary ml-2">保存</button>
+    <button id="pomodoro-hide-btn" class="btn btn-sm btn-secondary ml-2">閉じる</button>
+
+
+  <!-- 「タイマーを表示」チェックは常時 -->
+  <div class="mt-2">
+    <label><input type="checkbox" id="pomodoro-visible" checked> タイマーを表示</label>
+  </div>
+</div>
+
+
+  </div>
+    <div class="input-group my-2" style="max-width:400px;">
+    <input id="memo-search" type="text" class="form-control" placeholder="メモ内検索">
+    <div class="input-group-append">
+      <button id="search-btn" class="btn btn-outline-secondary" type="button">検索</button>
+    </div>
+  </div>
+
+<div class="mb-3">
+    <label>予定タスク</label>
+    <select name="task_id" class="form-control" id="task-select" {% if worklog.id %}disabled{% endif %}>
+        <option value="">--フリーログ--</option>
+        {% for t in tasks %}
+        <option value="{{ t.id }}" {% if selected_task and t.id == selected_task.id %}selected{% endif %}>
+            {{ t.title }} ({{ t.scheduled_start }})
+        </option>
+        {% endfor %}
+    </select>
+</div>
+
+<div class="mb-2">
+  <input type="file" id="image-upload" style="display:none;">
+</div>
+
+<!-- 目次・ピン留め・検索・テンプレ一括デモ（JS付き） -->
+<div class="mb-2">
+  <input type="file" id="image-upload" style="display:none;">
+  <!-- <button id="upload-image-btn" class="btn btn-secondary">画像を挿入</button> -->
+  <!-- <div id="memo-toc" class="small"></div> -->
+    <label><b>目次</b></label>
+  <div id="memo-toc" class="my-2"></div>
+  <!-- <div id="memo-preview" class="markdown-body"></div> -->
+
+  <!-- <input type="text" id="memo-search" class="form-control form-control-sm my-1" placeholder="メモ内検索..."> -->
+  <div id="memo-pinned" class="my-2 text-danger mb-1"></div>
+  <!-- <select id="template-select" class="form-control form-control-sm mb-2" style="width:220px; display:inline-block;">
+    <option value="">テンプレート選択</option>
+    <option value="meeting">会議メモ</option>
+    <option value="review">ふりかえり</option>
+  </select> -->
+
+  <!-- サマリー集約：TOCとあまりやってることが変わらないので使用しない -->
+  <!-- <button id="summary-toggle" class="btn btn-sm btn-outline-secondary">サマリービュー</button> -->
+  <!-- <button id="summary-btn" class="btn btn-outline-secondary btn-sm">サマリー</button>
+  <div id="summary-area" class="border p-2 mt-2" style="background:#f9f9f9;min-height:60px;"></div> -->
+
+</div>
+
+
+<form method="post" enctype="multipart/form-data"></form>
+  <!-- CDNリンク: head部 -->
+  <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
+  <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+
+  <!-- テキストボックスの表示・非表示切り替え -->
+  <div class="form-group form-check">
+    <input type="checkbox" class="form-check-input" id="previewOnlyToggle" checked>
+    <label class="form-check-label" for="previewOnlyToggle">閲覧モード（メモ欄を非表示）</label>
+  </div>
+
+
+<!-- メモ欄本体 -->
+<label for="memo-editor"><b>作業メモ（MD）</b></label>
+<textarea id="memo-editor" name="memo" rows="20">{{ worklog.memo or "" }}</textarea>
+
+<!-- プレビュー -->
+<div id="memo-preview" class="border rounded p-2 mt-2" style="min-height:120px;background:#f8f8f8"></div>
+  
+  <!-- デモ実装 -->
+  <!-- <div id="memo-preview" class="border rounded p-2 mt-2" style="min-height:120px;background:#f8f8f8"></div> -->
+  <div id="memo-progress" class="mt-2"></div>
+
+  <!-- <textarea id="memo-textarea" class="form-control" rows="15" style="font-family:monospace;">{{ worklog.memo or "" }}</textarea> -->
+  <div class="mt-2">
+    <button id="save-btn" class="btn btn-primary">保存</button>
+  </div>
+
+</form>
+
+{% if img_urls %}
+<div class="my-3">
+  <b>アップロード済み画像:</b><br>
+  {% for url in img_urls %}
+    <a href="{{ url }}" target="_blank">
+      <img src="{{ url }}" alt="アップロード画像" style="height:100px; margin:4px; border:1px solid #aaa;">
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let pomo = {
+  work: 25,        // 作業時間（分）
+  break: 5,        // 休憩時間（分）
+  sets: 4,         // 最大セット数
+  phase: 'work',   // 'work' or 'break'
+  lap: 1,
+  time: 25*60,     // 秒
+  running: false,
+  interval: null,
+};
+
+let timer = null, seconds = 0, pomoState = 'work', pomoCount = 0;
+
+function updateTimer() {
+  let m = String(Math.floor(seconds / 60)).padStart(2, '0');
+  let s = String(seconds % 60).padStart(2, '0');
+  $('#timer-display').text(`${m}:${s}`);
+}
+function updatePomodoroUI() {
+  // 時計表示
+  let min = Math.floor(pomo.time / 60).toString().padStart(2,'0');
+  let sec = (pomo.time % 60).toString().padStart(2,'0');
+  document.getElementById('pomodoro-time').innerText = `${min}:${sec}`;
+  // セット数
+  document.getElementById('pomodoro-lap').innerText = pomo.lap;
+  document.getElementById('pomodoro-max-lap').innerText = pomo.sets;
+  document.getElementById('pomodoro-ss-icon').innerText = pomo.running ? '⏸️' : '▶️';
+  document.getElementById('pomodoro-time').style.color = (pomo.phase === 'work') ? '#2a8f2a' : '#2060a0';
+}
+
+function pomoTick() {
+  if (pomo.time > 0) {
+    pomo.time--;
+    updatePomodoroUI();
+  } else {
+    if (pomo.phase === 'work') {
+      pomo.phase = 'break';
+      pomo.time = pomo.break * 60;
+      updatePomodoroUI();
+      alert('休憩時間です！');
+    } else {
+      if (pomo.lap < pomo.sets) {
+        pomo.lap++;
+        pomo.phase = 'work';
+        pomo.time = pomo.work * 60;
+        updatePomodoroUI();
+        alert('次の作業セット開始！');
+      } else {
+        pomo.running = false;
+        clearInterval(pomo.interval);
+        pomo.interval = null;
+        updatePomodoroUI();
+        alert('ポモドーロ完了！');
+      }
+    }
+  }
+}
+
+function pomoStartStop() {
+  if (pomo.running) {
+    pomo.running = false;
+    clearInterval(pomo.interval);
+    pomo.interval = null;
+  } else {
+    pomo.running = true;
+    pomo.interval = setInterval(pomoTick, 1000);
+  }
+  updatePomodoroUI();
+}
+
+function pomoReset() {
+  pomo.running = false;
+  clearInterval(pomo.interval);
+  pomo.interval = null;
+  pomo.phase = 'work';
+  pomo.lap = 1;
+  pomo.time = pomo.work * 60;
+  updatePomodoroUI();
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  updatePomodoroUI();
+
+  document.getElementById('pomodoro-config-btn').onclick = function(){
+    document.getElementById('pomodoro-config-modal').style.display = 'block';
+  };
+  document.getElementById('pomodoro-hide-btn').onclick = function(){
+    document.getElementById('pomodoro-config-modal').style.display = 'none';
+  };
+  document.getElementById('pomodoro-save-btn').onclick = function(){
+    pomo.work = parseInt(document.getElementById('pomodoro-work').value);
+    pomo.break = parseInt(document.getElementById('pomodoro-break').value);
+    pomo.sets = parseInt(document.getElementById('pomodoro-sets').value);
+    pomoReset();
+    document.getElementById('pomodoro-config-modal').style.display = 'none';
+    document.getElementById('pomodoro-max-lap').innerText = pomo.sets;
+  };
+  document.getElementById('pomodoro-startstop-btn').onclick = pomoStartStop;
+  document.getElementById('pomodoro-reset-btn').onclick = pomoReset;
+
+  // タイマー表示ON/OFF
+  document.getElementById('pomodoro-visible').onchange = function(){
+    document.getElementById('pomodoro-timer-box').style.display = this.checked ? '' : 'none';
+  };
+});
+
+$('#start-btn').on('click', function(e){
+e.preventDefault();
+fetch('/api/worklog/set_start/{{ worklog.id }}', {method: 'POST'})
+    .then(res => res.json())
+    .then(data => {
+    $('#start-time').text(data.time);
+    });
+});
+$('#end-btn').on('click', function(e){
+e.preventDefault();
+fetch('/api/worklog/set_end/{{ worklog.id }}', {method: 'POST'})
+    .then(res => res.json())
+    .then(data => {
+    $('#end-time').text(data.time);
+    });
+});
+
+
+// $('#start-timer').on('click', function(){ startPomodoro(); });
+// $('#end-timer').on('click', function(){ if(timer) clearInterval(timer); });
+
+$('#upload-image-btn').on('click', function(){ $('#image-upload').click(); });
+$('#image-upload').on('change', function(e){
+  var file = e.target.files[0];
+  var formData = new FormData();
+  formData.append('file', file);
+  formData.append('worklog_id', '{{ worklog.id }}');
+  $.ajax({
+    url: '/upload',
+    type: 'POST',
+    data: formData,
+    contentType: false, processData: false,
+    success: function(resp){
+      let md = `![${file.name}](${resp.url})\n`;
+      let $ta = $('#memo-textarea');
+      let curPos = $ta.prop('selectionStart');
+      let text = $ta.val();
+      $ta.val(text.slice(0, curPos) + md + text.slice(curPos));
+    }
+  });
+});
+$('#save-btn').on('click', function(){
+  const memoValue = easyMDE.value();
+  $.post('', { memo: memoValue }, function(){
+    alert('保存しました');
+    // 保存後にプレビュー更新したい場合（任意）
+    $('#memo-preview').html(parseMarkdown(memoValue));
+  });
+});
+
+
+const easyMDE = new EasyMDE({
+  element: document.getElementById("memo-editor"),
+  spellChecker: false,
+  autofocus: true,
+  autosave: { enabled: true, uniqueId: "worklog-{{ worklog.id }}" },
+  previewRender: function(plainText) { return EasyMDE.prototype.markdown(plainText); },
+  placeholder: "ここに作業メモや議事メモ、コード、スクリーンショットなどをMarkdownで自由に記入できます",
+});
+
+// 画像ペースト対応
+easyMDE.codemirror.on("paste", function(cm, event) {
+  const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+  for (let i=0; i < items.length; i++) {
+    if (items[i].kind === "file") {
+      const file = items[i].getAsFile();
+      uploadImage(file);
+    }
+  }
+});
+// D&Dにも対応
+easyMDE.codemirror.on("drop", function(cm, event) {
+  const files = event.dataTransfer.files;
+  for (let i=0; i < files.length; i++) {
+    uploadImage(files[i]);
+  }
+});
+
+function uploadImage(file) {
+  let formData = new FormData();
+  formData.append("image", file);
+  formData.append("worklog_id", "{{ worklog.id }}");
+  fetch("/upload_image", {
+    method: "POST",
+    body: formData
+  }).then(res => res.json()).then(data => {
+    if (data.url) {
+      const cursor = easyMDE.codemirror.getCursor();
+      easyMDE.codemirror.replaceRange(`\n![](${data.url})\n`, cursor);
+    } else {
+      alert("画像アップロードに失敗しました");
+    }
+  });
+}
+
+
+// デモ実装用
+// --- 上記JSをそのままコピペ ---
+// シンプルなmarkdownパーサ利用
+function parseMarkdown(md) {
+  return md.replace(/^# (.*)$/gm, '<h2>$1</h2>')
+           .replace(/^## (.*)$/gm, '<h3>$1</h3>')
+           .replace(/- \[ \] (.*)$/gm, '<input type="checkbox" disabled> $1')
+           .replace(/- \[x\] (.*)$/gim, '<input type="checkbox" checked disabled> $1')
+           .replace(/\n/g, '<br>');
+}
+function generateTOC(md) {
+  let toc = "";
+  const lines = md.split('\n');
+  lines.forEach(l => {
+    if(l.startsWith('# ')) toc += `<div><a href="#">${l.replace('# ', '')}</a></div>`;
+    if(l.startsWith('## ')) toc += `<div style="margin-left:1em"><a href="#">${l.replace('## ', '')}</a></div>`;
+  });
+  $('#memo-toc').html(toc ? "<b>目次</b> " + toc : "");
+}
+function extractPinned(md) {
+  const lines = md.split('\n');
+  let pins = lines.filter(l => l.startsWith('::pin::') || l.startsWith('[!重要]'));
+  $('#memo-pinned').html(pins.length ? "🟨 <b>ピン留め:</b> <br>" + pins.join('<br>') : "");
+}
+function showSummary(md) {
+  let summary = "";
+  const lines = md.split('\n');
+  let curr = '';
+  lines.forEach(l => {
+    if(l.startsWith('# ') || l.startsWith('## ')) {
+      curr = "<b>" + l.replace(/^#+ /, '') + "</b><br>";
+    } else if(curr && l.trim()) {
+      summary += curr + l + "<br>";
+      curr = '';
+    }
+  });
+  $('#memo-summary').html(summary).toggle();
+}
+function showProgress(md) {
+  const all = (md.match(/- \[ \]/g) || []).length + (md.match(/- \[x\]/gi) || []).length;
+  const done = (md.match(/- \[x\]/gi) || []).length;
+  if(all) {
+    const percent = Math.round((done/all)*100);
+    $('#memo-progress').html(`<div>進捗: ${done}/${all} (${percent}%) <div style="background:#eee;width:100%;height:8px;"><div style="background:#4caf50;width:${percent}%;height:8px;"></div></div></div>`);
+  } else {
+    $('#memo-progress').empty();
+  }
+}
+function summarizeMemo(md) {
+  // 例: 1. 最初のh1/h2、2.なければ先頭3行
+  const lines = md.split('\n');
+  const headings = lines.filter(line => line.match(/^#{1,2} /));
+  if (headings.length > 0) {
+    return headings.join('<br>');
+  } else {
+    return lines.slice(0,3).join('<br>');
+  }
+}
+$('#summary-btn').on('click', function(){
+  const memoValue = easyMDE.value();
+  const summary = summarizeMemo(memoValue);
+  $('#summary-area').html(summary);
+});
+$(function(){
+  // 初回ロード
+  const memoValue = easyMDE.value();
+  const summary = summarizeMemo(memoValue);
+  $('#summary-area').html(summary);
+});
+
+
+
+$('#template-select').on('change', function(){
+  let val = $(this).val();
+  if(val == "meeting") $('#memo-editor').val((i,v) => v + "\n# 会議メモ\n- 目的:\n- 議事:\n- 決定事項:\n");
+  if(val == "review") $('#memo-editor').val((i,v) => v + "\n# ふりかえり\n- 良かった点:\n- 改善点:\n- 次に活かすこと:\n");
+  $(this).val("");
+  $('#memo-editor').trigger('input');
+});
+$('#summary-toggle').on('click', function(){
+  showSummary($('#memo-editor').val());
+});
+$('#memo-editor').on('keydown', function(e){
+  if(e.ctrlKey && e.key === 'd') {
+    e.preventDefault();
+    const now = new Date();
+    const dt = now.toLocaleString();
+    let sel = this.selectionStart;
+    let text = this.value;
+    this.value = text.slice(0, sel) + dt + text.slice(sel);
+    this.selectionStart = this.selectionEnd = sel + dt.length;
+    $(this).trigger('input');
+  }
+});
+$('#memo-search').on('input', function(){
+  let q = $(this).val();
+  let md = $('#memo-editor').val();
+  if(!q) {
+    $('#memo-preview').html(parseMarkdown(md));
+    return;
+  }
+  let re = new RegExp(q, 'gi');
+  let html = parseMarkdown(md).replace(re, m => `<mark>${m}</mark>`);
+  $('#memo-preview').html(html);
+});
+$('#memo-editor').on('input', function(){
+  const md = $(this).val();
+  $('#memo-preview').html(parseMarkdown(md));
+  generateTOC(md);
+  extractPinned(md);
+  showProgress(md);
+});
+$('#memo-editor').trigger('input');
+
+function highlightKeywordInPreview(keyword) {
+  // メモのmarkdownレンダリング済みHTML
+  const previewEl = document.getElementById("memo-preview"); // プレビュー表示エリアのID
+  if (!previewEl) return;
+
+  // 検索前に既存ハイライト解除
+  previewEl.innerHTML = previewEl.innerHTML.replace(/<mark>(.*?)<\/mark>/g, '$1');
+
+  if (!keyword) return;
+
+  // シンプルな全文一致（大文字小文字無視）、複数箇所
+  const regex = new RegExp('(' + keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+  previewEl.innerHTML = previewEl.innerHTML.replace(regex, '<mark>$1</mark>');
+}
+
+$("#search-btn").on('click', function(){
+  const keyword = $("#memo-search").val();
+  highlightKeywordInPreview(keyword);
+});
+// エンターキー対応
+$("#memo-search").on('keypress', function(e){
+  if(e.which == 13) $("#search-btn").click();
+});
+
+// 該当箇所へスクロール（最初のハイライトのみ）
+function scrollToFirstMark() {
+  const mark = document.querySelector('#memo-preview mark');
+  if (mark) mark.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+$("#search-btn").on('click', function(){
+  const keyword = $("#memo-search").val();
+  highlightKeywordInPreview(keyword);
+  setTimeout(scrollToFirstMark, 200);
+});
+
+
+function assignHeadingIdsInPreview() {
+  const previewEl = document.getElementById("memo-preview");
+  if (!previewEl) return;
+  let headings = previewEl.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  headings.forEach((h, idx) => {
+    if (!h.id) h.id = "toc-heading-" + idx;
+  });
+}
+
+function generateTOC() {
+  const previewEl = document.getElementById("memo-preview");
+  if (!previewEl) return;
+  let headings = previewEl.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  let tocHtml = "";
+  headings.forEach((h, idx) => {
+    let tag = h.tagName.toLowerCase();
+    let text = h.innerText;
+    let id = h.id;
+    let indent = (parseInt(tag.replace('h', '')) - 1) * 20;
+    tocHtml += `<div style="margin-left:${indent}px;">
+      <a href="#${id}" class="toc-link">${text}</a>
+    </div>`;
+  });
+  document.getElementById("memo-toc").innerHTML = tocHtml;
+}
+
+// クリックで該当見出しへスムーズスクロール
+$(document).on('click', '.toc-link', function(e){
+  e.preventDefault();
+  let target = $(this).attr('href');
+  let $target = $(target);
+  if ($target.length) {
+    $('html, body').animate({scrollTop: $target.offset().top - 60}, 400);
+  }
+});
+
+function renderPreviewAndTOC(md) {
+  // marked.jsを使ってmarkdownをHTMLに
+  const html = marked.parse(md);
+  document.getElementById('memo-preview').innerHTML = html;
+  // 見出しにidを割り振る
+  assignHeadingIdsInPreview();
+  generateTOC();
+}
+
+$('#memo-editor').on('input', function(){
+  const md = $(this).val();
+  renderPreviewAndTOC(md);
+  extractPinned(md);
+  showProgress(md);
+});
+$('#memo-editor').trigger('input');
+// 表示切り替え処理
+
+function setMemoMode(isPreviewOnly) {
+  // EasyMDE本体のラッパー
+  const wrapper = easyMDE.codemirror.getWrapperElement();
+  if (isPreviewOnly) {
+    wrapper.style.display = "none";
+    $('#memo-preview').show();
+  } else {
+    wrapper.style.display = "";
+    $('#memo-preview').show(); // 両方表示でもOK
+  }
+}
+
+$(function() {
+  // チェックボックス切り替え
+  $('#previewOnlyToggle').on('change', function() {
+    setMemoMode(this.checked);
+  });
+  // 初期値は「閲覧モード＝チェックON」
+  setMemoMode($('#previewOnlyToggle').prop('checked'));
+});
+</script>
+{% endblock %}

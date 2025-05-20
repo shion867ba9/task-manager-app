@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>{% if project %}プロジェクト編集{% else %}新規プロジェクト作成{% endif %}</h2>
+<form method="post">
+  <div class="form-group">
+    <label>名称</label>
+    <input type="text" name="name" class="form-control" required value="{{ project.name if project else '' }}">
+  </div>
+  <div class="form-group">
+    <label>概要</label>
+    <input type="text" name="description" class="form-control" value="{{ project.description if project else '' }}">
+  </div>
+  <div class="form-group">
+    <label>進捗（%）</label>
+    <input type="number" name="progress" class="form-control" value="{{ project.progress if project else 0 }}">
+  </div>
+  <div class="form-group">
+    <label>状態</label>
+    <select name="status" class="form-control">
+      {% for s in ['未着手', '進行中', '完了', '凍結'] %}
+        <option value="{{ s }}" {% if project and project.status == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>開始予定日</label>
+    <input type="date" name="scheduled_start" class="form-control" value="{{ project.scheduled_start if project else '' }}">
+  </div>
+  <div class="form-group">
+    <label>終了予定日</label>
+    <input type="date" name="scheduled_end" class="form-control" value="{{ project.scheduled_end if project else '' }}">
+  </div>
+
+  <div class="form-group">
+    <label>色（プロジェクトカラー）</label>
+    <div>
+      {% for col in ["#FFB3BA","#FFDFBA","#FFFFBA","#BAFFC9","#BAE1FF","#D5BAFF","#FFE1FF","#E2F0CB"] %}
+        <button type="button" class="btn" style="background:{{col}};width:2em;height:2em;"
+          onclick="document.getElementById('color-picker').value='{{col}}';"></button>
+      {% endfor %}
+      <input id="color-picker" name="color" type="color" value="{{ project.color or '#FF6F61' }}">
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">保存</button>
+  <a href="{{ url_for('list_projects') }}" class="btn btn-secondary">キャンセル</a>
+</form>
+{% endblock %}

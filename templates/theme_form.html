@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>{% if theme %}テーマ編集{% else %}新規テーマ作成{% endif %}</h2>
+<form method="post">
+  <div class="form-group">
+    <label>名称</label>
+    <input type="text" name="name" class="form-control" required value="{{ theme.name if theme else '' }}">
+  </div>
+  <div class="form-group">
+    <label>概要</label>
+    <input type="text" name="description" class="form-control" value="{{ theme.description if theme else '' }}">
+  </div>
+  <div class="form-group">
+    <label>進捗（%）</label>
+    <input type="number" name="progress" class="form-control" value="{{ theme.progress if theme else 0 }}">
+  </div>
+  <div class="form-group">
+    <label>状態</label>
+    <select name="status" class="form-control">
+      {% for s in ['未着手', '進行中', '完了', '凍結'] %}
+        <option value="{{ s }}" {% if theme and theme.status == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>プロジェクト</label>
+    <select name="project_id" class="form-control">
+      <option value="">-- 未指定 --</option>
+      {% for pj in projects %}
+        <option value="{{ pj.id }}" {% if theme and theme.project_id == pj.id %}selected{% endif %}>{{ pj.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>開始予定日</label>
+    <input type="date" name="scheduled_start" class="form-control" value="{{ theme.scheduled_start if theme else '' }}">
+  </div>
+  <div class="form-group">
+    <label>終了予定日</label>
+    <input type="date" name="scheduled_end" class="form-control" value="{{ theme.scheduled_end if theme else '' }}">
+  </div>
+  <button type="submit" class="btn btn-primary">保存</button>
+  <a href="{{ url_for('list_themes') }}" class="btn btn-secondary">キャンセル</a>
+</form>
+{% endblock %}

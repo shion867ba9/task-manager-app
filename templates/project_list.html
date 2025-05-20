@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>プロジェクト一覧</h2>
+<a href="{{ url_for('new_project') }}" class="btn btn-primary mb-2">新規プロジェクト作成</a>
+<table class="table table-bordered">
+  <thead>
+    <tr>
+      <th>ID</th><th>名称</th><th>概要</th><th>進捗</th><th>状態</th><th>開始予定</th><th>終了予定</th><th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for pj in projects %}
+    <tr>
+      <td>{{ pj.id }}</td>
+      <td><a href="{{ url_for('project_detail', project_id=pj.id) }}">{{ pj.name }}</a></td>
+      <td>{{ pj.description }}</td>
+      <td>{{ pj.progress }}%</td>
+      <td>{{ pj.status }}</td>
+      <td>{{ pj.scheduled_start or '' }}</td>
+      <td>{{ pj.scheduled_end or '' }}</td>
+      <td>
+        <a href="{{ url_for('edit_project', project_id=pj.id) }}" class="btn btn-sm btn-info">編集</a>
+        <a href="{{ url_for('delete_project', project_id=pj.id) }}" class="btn btn-sm btn-danger"
+           onclick="return confirm('本当に削除しますか？')">削除</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
