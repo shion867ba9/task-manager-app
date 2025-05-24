@@ -2,31 +2,40 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>{{ task.id if task else '新規' }}タスク作成・編集</h2>
+<link rel="stylesheet" href="{{ url_for('static', filename='select2.min.css') }}">
+<script src="{{ url_for('static', filename='jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='select2.min.js') }}"></script>
+
+<!-- <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" /> -->
+<!-- <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script> -->
+
 <form method="post">
-  <div class="form-group">
-    <label>プロジェクト</label>
-    <select name="project_id" class="form-control">
-      <option value="">-- プロジェクト未指定 --</option>
-      {% for project in projects %}
-        <option value="{{ project.id }}"
-          {% if project.id|string == selected_project_id|string %}selected{% endif %}>
-          {{ project.name }}
-        </option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="form-group">
-    <label>テーマ</label>
-    <select name="theme_id" class="form-control">
-      <option value="">-- テーマ未指定 --</option>
-      {% for theme in themes %}
-        <option value="{{ theme.id }}"
-          {% if theme.id|string == selected_theme_id|string %}selected{% endif %}>
-          {{ theme.name }}{% if theme.project_id %}（{{ theme.project.name }}）{% endif %}
-        </option>
-      {% endfor %}
-    </select>
-  </div>
+<div class="form-group">
+  <label for="project_id">プロジェクト</label>
+  <select id="project-select" name="project_id" class="form-control">
+    <option value="">---選択---</option>
+    {% for pj in projects %}
+      <option value="{{ pj.id }}" data-color="{{ pj.color or '#ccc' }}"
+        {% if selected_project_id and selected_project_id|string == pj.id|string %}selected{% endif %}>
+        {{ pj.name }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
+<div class="form-group">
+  <label for="theme_id">テーマ</label>
+  <select id="theme-select" name="theme_id" class="form-control">
+    <option value="">---選択---</option>
+    {% for th in themes %}
+      <option value="{{ th.id }}"
+        data-color="{{ th.project.color if th.project else '#ccc' }}"
+        data-project="{{ th.project_id or '' }}"
+        {% if selected_theme_id and selected_theme_id|string == th.id|string %}selected{% endif %}>
+        {{ th.name }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
   <div class="form-group">
     <label>タイトル</label>
     <input type="text" name="title" class="form-control" required value="{{ task.title if task else '' }}">
@@ -67,3 +76,63 @@
   <a href="{{ url_for('calendar_view') }}" class="btn btn-secondary">キャンセル</a>
 </form>
 {% endblock %}
+
+<style>
+  .color-dot {
+    display: inline-block;
+    width: 1em; height: 1em;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script>
+$(function() {
+  // カラードット付select2テンプレート
+  function formatColorOption (state) {
+    if (!state.id) { return state.text; }
+    var color = $(state.element).data('color') || '#ccc';
+    var $state = $(
+      '<span class="color-dot" style="background:' + color + '"></span>' +
+      '<span>' + state.text + '</span>'
+    );
+    return $state;
+  }
+
+  // プロジェクト選択肢にselect2適用
+  $('#project-select').select2({
+    width: '100%',
+    templateResult: formatColorOption,
+    templateSelection: formatColorOption,
+    escapeMarkup: function(m) { return m; }
+  });
+
+  // テーマ選択肢にselect2適用
+  $('#theme-select').select2({
+    width: '100%',
+    templateResult: formatColorOption,
+    templateSelection: formatColorOption,
+    escapeMarkup: function(m) { return m; }
+  });
+
+  // プロジェクト→テーマ絞り込み
+  function filterThemes() {
+    var pjId = $('#project-select').val();
+    $('#theme-select option').each(function() {
+      var tProject = $(this).data('project');
+      if (!pjId || !tProject || tProject == pjId) {
+        $(this).show();
+      } else {
+        $(this).hide();
+      }
+    });
+    $('#theme-select').val('').trigger('change'); // 非表示テーマが選択されてたらリセット
+  }
+  $('#project-select').on('change', filterThemes);
+
+  // ページ初期化時にもテーマの絞り込み
+  filterThemes();
+});
+</script>

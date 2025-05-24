@@ -2,10 +2,41 @@
 {% block content %}
 <h2>タスク一覧</h2>
 <a href="{{ url_for('create_task') }}" class="btn btn-primary mb-2">新規タスク作成</a>
-<table class="table table-bordered">
+
+<!-- テーブル上部などに追加 -->
+<div class="mb-2 d-flex align-items-center">
+  <label class="mr-2">開始日: <input type="text" id="min-date-global" class="form-control d-inline-block" style="width: 140px;" placeholder="開始日"></label>
+  <label class="ml-3 mr-2">終了日: <input type="text" id="max-date-global" class="form-control d-inline-block" style="width: 140px;" placeholder="終了日"></label>
+</div>
+
+<table id="task-table" class="table table-bordered">
   <thead>
     <tr>
-      <th>ID</th><th>タイトル</th><th>プロジェクト</th><th>テーマ</th><th>開始</th><th>終了</th><th>状態</th><th>操作</th>
+      <th>ID</th><th>タイトル</th><th>プロジェクト</th><th>テーマ</th>
+      <th>開始</th><th>終了</th><th>状態</th><th>操作</th>
+    </tr>
+    <tr>
+      <!-- フィルタ用input -->
+      <th><input type="text" placeholder="ID" class="form-control form-control-sm" /></th>
+      <th><input type="text" placeholder="タイトル" class="form-control form-control-sm" /></th>
+      <th><input type="text" placeholder="プロジェクト" class="form-control form-control-sm" /></th>
+      <th><input type="text" placeholder="テーマ" class="form-control form-control-sm" /></th>
+      <th>
+        <!-- <input type="date" id="min-date-table">
+        <input type="date" id="max-date-table"> -->
+      </th>
+      <th></th>
+      <th>
+        <select class="form-control form-control-sm">
+          <option value="">全て</option>
+          <option value="未着手">未着手</option>
+          <option value="進行中">進行中</option>
+          <option value="完了">完了</option>
+          <option value="保留">保留</option>
+          <!-- ...他の状態... -->
+        </select>
+      </th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
@@ -13,7 +44,22 @@
     <tr>
       <td>{{ task.id }}</td>
       <td>{{ task.title }}</td>
-      <td>{{ task.project.name if task.project_id and task.project else '' }}</td>
+      <td>
+        {% if task.project %}
+          <span style="
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background-color: {{ task.project.color if task.project.color else '#bbb' }};
+            margin-right: 8px;
+            border: 1px solid #888;
+            vertical-align: middle;
+          "></span>
+          {{ task.project.name }}
+        {% endif %}
+      </td>
+
       <td>{{ task.theme.name if task.theme_id and task.theme else '' }}</td>
       <td>{{ task.scheduled_start }}</td>
       <td>{{ task.scheduled_end }}</td>
@@ -25,4 +71,100 @@
     {% endfor %}
   </tbody>
 </table>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    /* 例：高さを揃える、幅を調整するなど */
+  .flatpickr-input {
+    min-width: 140px;
+  }
+</style>
+
+<!-- 必ずjQuery → DataTablesの順で読み込む -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css" />
+
+
+<script>
+var table;
+$(document).ready(function() {
+  table = $('#task-table').DataTable({
+    orderCellsTop: true,
+    fixedHeader: true,
+    pageLength: 25,
+    language: {
+      // url: "//cdn.datatables.net/plug-ins/1.13.6/i18n/ja.json"
+        "emptyTable": "テーブルにデータがありません",
+        "info": " _TOTAL_ 件中 _START_ から _END_ まで表示",
+        "infoEmpty": " 0 件中 0 から 0 まで表示",
+        "infoFiltered": "（全 _MAX_ 件より抽出）",
+        "lengthMenu": "_MENU_ 件表示",
+        "loadingRecords": "読み込み中...",
+        "processing": "処理中...",
+        "search": "検索:",
+        "zeroRecords": "一致するレコードがありません",
+        "paginate": {
+            "first": "先頭",
+            "last": "最終",
+            "next": "次",
+            "previous": "前"
+        }
+    }
+
+  });
+  
+
+  // 上部フィルタで日付選択したら再描画
+  $('#min-date-global, #max-date-global').on('change', function() {
+    table.draw();
+  });
+
+  // カラム別フィルタも念のため（ここは必要な場合だけ）
+  $('#task-table thead tr:eq(1) th').each(function (i) {
+    $('input,select', this).on('keyup change', function () {
+      if (table.column(i).search() !== this.value) {
+        table.column(i).search(this.value).draw();
+      }
+    });
+  });
+
+});
+
+// DataTablesカスタム検索関数
+$.fn.dataTable.ext.search.push(
+  function(settings, data, dataIndex) {
+    // テーブルの列順でインデックスを確認
+    // [0]ID, [1]タイトル, [2]プロジェクト, [3]テーマ, [4]開始, [5]終了...
+    var min = $('#min-date-global').val();
+    var max = $('#max-date-global').val();
+    var startDate = data[4] ? data[4].split(' ')[0] : ''; // 'YYYY-MM-DD'の部分
+    // 例：開始日が空の場合は常にtrue
+    if (!min && !max) return true;
+    // 最低日より前なら表示しない
+    if (min && startDate < min) return false;
+    // 最大日より後なら表示しない
+    if (max && startDate > max) return false;
+    return true;
+  }
+);
+
+// 入力値変更時にテーブル再描画
+$('#min-date, #max-date').on('change', function() {
+    table.draw();
+  // $('#task-table').DataTable().draw();
+});
+
+flatpickr("#min-date-global", {
+  dateFormat: "Y-m-d",
+  locale: "ja"
+});
+flatpickr("#max-date-global", {
+  dateFormat: "Y-m-d",
+  locale: "ja"
+});
+
+</script>
+
 {% endblock %}

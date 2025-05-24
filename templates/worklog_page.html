@@ -323,6 +323,7 @@ function uploadImage(file) {
   let formData = new FormData();
   formData.append("image", file);
   formData.append("worklog_id", "{{ worklog.id }}");
+  console.log("uploading image for worklog_id:", "{{ worklog.id }}"); // デバッグ用
   fetch("/upload_image", {
     method: "POST",
     body: formData
@@ -330,6 +331,8 @@ function uploadImage(file) {
     if (data.url) {
       const cursor = easyMDE.codemirror.getCursor();
       easyMDE.codemirror.replaceRange(`\n![](${data.url})\n`, cursor);
+      // 画像リストもリロード
+      window.location.reload();
     } else {
       alert("画像アップロードに失敗しました");
     }

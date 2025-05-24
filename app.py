@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from flask_migrate import Migrate
+from dateutil.parser import parse as parse_dt
+from datetime import datetime, timezone, timedelta
 import os
 import json
 import glob
@@ -12,6 +14,8 @@ app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 # app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////home/shion867ba9/project/taskmanaging_app/main/db/app.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
+
 TASK_STATUS_CHOICES = [
     '未着手', '進行中', '完了', '保留', '棚上げ', '割込み', 'MTG', 'フリーログ'
 ]
@@ -42,12 +46,18 @@ class Task(db.Model):
     scheduled_end = db.Column(db.DateTime)
     weight = db.Column(db.Integer, default=10)
     status = db.Column(db.String(20), default='未着手')
-    is_completed = db.Column(db.Boolean, default=False)
+    @property
+    def is_completed(self):
+        return TaskWorkLog.query.filter_by(task_id=self.id).first() is not None
     # 追加: 子テーブルとして実績を持つ
     worklogs = db.relationship('TaskWorkLog', backref='task', lazy=True)
 
     parent_task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=True)
     subtasks = db.relationship('Task', backref=db.backref('parent_task', remote_side=[id]), lazy=True)
+    # リレーションシップの追加
+    project = db.relationship('Project', backref=db.backref('tasks', lazy=True))
+    theme = db.relationship('Theme', backref=db.backref('tasks', lazy=True))
+
 
 class TaskWorkLog(db.Model):  # タスクの作業実績
     id = db.Column(db.Integer, primary_key=True)
@@ -60,7 +70,7 @@ class TaskWorkLog(db.Model):  # タスクの作業実績
     memo = db.Column(db.String(500))   # 備考（任意）
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
     theme_id = db.Column(db.Integer, db.ForeignKey('theme.id'), nullable=True)
-
+    is_pinned = db.Column(db.Boolean, default=False)  # ★追加
 
 class Project(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -118,7 +128,9 @@ def index():
 
 @app.route('/calendar')
 def calendar_view():
-    return render_template('calendar.html')
+    projects = Project.query.order_by(Project.name).all()
+    themes = Theme.query.order_by(Theme.name).all()
+    return render_template('calendar.html', projects=projects, themes=themes)
 
 def darken_color(hex_color, factor=0.5):
     # HEX→RGB→HSL処理で50%暗く
@@ -136,6 +148,8 @@ def api_tasks():
     tasks = Task.query.all()
     events = []
     for t in tasks:
+        # 1つでも該当作業実績があれば1つだけ取得
+        worklog = TaskWorkLog.query.filter_by(task_id=t.id).first()
         pj = Project.query.get(t.project_id) if t.project_id else None
         color = pj.color if pj and pj.color else "#d3d3d3"
         if t.is_completed:
@@ -145,9 +159,13 @@ def api_tasks():
             'title': t.title,
             'start': t.scheduled_start.isoformat() if t.scheduled_start else None,
             'end': t.scheduled_end.isoformat() if t.scheduled_end else None,
-            'color': color
+            'color': color,
+            'is_completed': bool(worklogs),  # 作業実績が1つでもあればTrue
+            'worklog_id': worklog.id if worklog else None,
         })
     return jsonify(events)
+
+
 
 # 2 プロジェクト一覧
 # 一覧画面ルート
@@ -326,18 +344,25 @@ def delete_theme(theme_id):
 @app.route('/theme/<int:theme_id>')
 def theme_detail(theme_id):
     th = Theme.query.get_or_404(theme_id)
-    tasks = Task.query.filter_by(theme_id=theme_id).all()
-    progress = calc_theme_progress(theme_id)
-    return render_template('theme_detail.html', theme=th, tasks=tasks, progress=progress)
-
+    project = th.project if th.project_id else None
+    # 紐づくタスク一覧
+    tasks = Task.query.filter_by(theme_id=theme_id).order_by(Task.scheduled_start).all()
+    # 作業実績ページ用リンク生成（既存ならworklog.id, 無ければNone）
+    worklog_map = {t.id: TaskWorkLog.query.filter_by(task_id=t.id).first() for t in tasks}
+    return render_template('theme_detail.html', theme=th, project=project, tasks=tasks, worklog_map=worklog_map)
 
 # 4. タスク作成
 @app.route('/task/new', methods=['GET', 'POST'])
 def create_task():
     projects = Project.query.all()
-    themes = Theme.query.all()
+    project_id = request.args.get('project_id')
+    if project_id:
+        themes = Theme.query.filter_by(project_id=project_id).all()
+    else:
+        themes = Theme.query.all()
+    # themes = Theme.query.all()
     selected_project_id = request.args.get('project_id')
-    selected_theme_id = request.args.get('theme_id')
+    selected_theme_id = request.args.get('theme_id')      # テーマID ←ここ！
 
     if request.method == 'POST':
         title = request.form['title']
@@ -347,7 +372,7 @@ def create_task():
         scheduled_end = request.form.get('scheduled_end') or None
         weight = int(request.form.get('weight', 10))
         status = request.form.get('status', '未着手')
-        is_completed = 'is_completed' in request.form
+        # is_completed = 'is_completed' in request.form
         project_id = request.form.get('project_id') or None
         theme_id = request.form.get('theme_id') or None
         t = Task(
@@ -357,7 +382,7 @@ def create_task():
             scheduled_end=datetime.fromisoformat(scheduled_end) if scheduled_end else None,
             weight=weight,
             status=status,
-            is_completed=is_completed,
+            # is_completed=is_completed,
             project_id=project_id,
             theme_id=theme_id
         )
@@ -396,7 +421,7 @@ def edit_task(task_id):
         task.scheduled_end = datetime.fromisoformat(scheduled_end) if scheduled_end else None
         task.weight = int(request.form.get('weight', 10))
         task.status = request.form['status']
-        task.is_completed = 'is_completed' in request.form
+        # task.is_completed = request.form.get('is_completed') or None
         task.project_id = request.form.get('project_id') or None
         task.theme_id = request.form.get('theme_id') or None
 
@@ -438,33 +463,94 @@ def get_task(task_id):
         "latest_worklog_id": latest_worklog_id
     })
 
+def parse_datetime_with_jst(dtstr):
+    # JST = timezone(timedelta(hours=9))
+    # # タイムゾーン付きならOK
+    # dt = datetime.fromisoformat(dtstr)
+    # if dt.tzinfo is None:
+    #     # タイムゾーン情報がなければJSTを付与
+    #     dt = dt.replace(tzinfo=JST)
+    # else:
+    #     # 別TZならJSTに変換
+    #     dt = dt.astimezone(JST)
+    # return dt
+    if not dtstr:
+        return None
+    
+    print(dtstr, parse_dt(dtstr))
+    JST = timezone(timedelta(hours=9))
+    dt = datetime.fromisoformat(dtstr)
+    if dt.tzinfo is None:
+        # タイムゾーン情報がなければJSTを付与
+        dt = dt.replace(tzinfo=JST)
+    else:
+        # 別TZならJSTに変換
+        dt = dt.astimezone(JST)
+    # return parse_dt(dtstr)
+    return dt
 
 @app.route('/task/update/<int:task_id>', methods=['POST'])
 def update_task(task_id):
     task = Task.query.get_or_404(task_id)
-    before = json.dumps({c.name: getattr(task, c.name) for c in task.__table__.columns})
+    data = request.form or request.json  # どちらからでもOK
+    # 日付フィールド（必ず送る場合は上書きでOK）
+    if data.get('scheduled_start'):
+        task.scheduled_start = parse_datetime_with_jst(data['scheduled_start'])
+    if data.get('scheduled_end'):
+        task.scheduled_end = parse_datetime_with_jst(data['scheduled_end'])
 
-    record_undo('update', task)  # Undo履歴を保存（変更前）
-    task.title = request.form['title']
-    task.detail = request.form['detail']
-    task.scheduled_start = request.form['scheduled_start'] or None
-    task.scheduled_end = request.form['scheduled_end'] or None
-    task.weight = int(request.form.get('weight', 10))
-    task.status = request.form['status']
-    task.is_completed = 'is_completed' in request.form
+    # プロジェクト・テーマなどのIDは「値があれば更新、なければ維持」
+    project_id = data.get('project_id')
+    if project_id is not None and str(project_id).strip() != '':
+        task.project_id = int(project_id)
+    # 何も送ってこなければ現状維持
 
-    after = json.dumps({c.name: getattr(task, c.name) for c in task.__table__.columns})
+    theme_id = data.get('theme_id')
+    if theme_id is not None and str(theme_id).strip() != '':
+        task.theme_id = int(theme_id)
 
-    # Undo履歴
-    log = UndoRedoLog(
-        action_type='update',
-        target_table='Task',
-        target_id=task_id,
-        data_before=before,
-        data_after=after
-    )
-    db.session.add(log)
+    def task_to_dict(task):
+        d = {}
+        for c in task.__table__.columns:
+            v = getattr(task, c.name)
+            if isinstance(v, datetime):
+                d[c.name] = v.isoformat()
+            else:
+                d[c.name] = v
+        return d
+
+    before = json.dumps(task_to_dict(task))
+
+
+    task.project_id = request.form.get('project_id', task.project_id) or None
+    task.theme_id = request.form.get('theme_id', task.theme_id) or None
+    task.created_at = request.form.get('created_at')
+
+    # 受け取った値で上書き
+    task.title = request.form.get('title', task.title)
+    task.detail = request.form.get('detail', task.detail)
+    
+    # ここでISOフォーマットの文字列で送られてくる
+    scheduled_start = request.form.get('scheduled_start')
+    scheduled_end = request.form.get('scheduled_end')
+
+    if scheduled_start:
+        task.scheduled_start = parse_datetime_with_jst(scheduled_start)
+    if scheduled_end:
+        task.scheduled_end = parse_datetime_with_jst(scheduled_end)
+    task.weight = int(request.form.get('weight', task.weight or 10))
+    task.status = request.form.get('status', task.status)
+    # チェックボックスは値がなければ未チェック
+    # task.is_completed = request.form.get('is_completed', task.is_completed)
+    # task.is_completed = 'is_completed' in request.form
+    # task.is_completed = request.form.get('is_completed', task.is_completed)
+
+    task.worklogs = request.form.get('worklogs', task.worklogs)
+    task.parent_task_id = request.form.get('parent_task_id', task.parent_task_id)
+    task.subtasks = request.form.get('subtasks', task.subtasks)
+
     db.session.commit()
+    after = json.dumps(task_to_dict(task))
 
     
     # 進捗自動計算
@@ -667,6 +753,13 @@ def new_worklog():
     tasks = Task.query.order_by(Task.scheduled_start).all()
 
     if request.method == 'GET':
+        task_id = request.args.get('task_id')
+        # 既に作業実績があればリダイレクト
+        if task_id:
+            exist = TaskWorkLog.query.filter_by(task_id=task_id).first()
+            if exist:
+                return redirect(url_for('worklog_page', worklog_id=exist.id))
+
         log = TaskWorkLog()
         db.session.add(log)
         db.session.commit()
@@ -676,7 +769,6 @@ def new_worklog():
         # selected_project = None
         # selected_theme = None
 
-        task_id = request.args.get('task_id')
         if task_id:
             selected_task = Task.query.get(int(task_id))
             selected_start = selected_task.scheduled_start.strftime('%Y-%m-%dT%H:%M') if selected_task and selected_task.scheduled_start else None
@@ -761,7 +853,15 @@ def worklogs():
     logs = TaskWorkLog.query.order_by(TaskWorkLog.start_at.desc()).all()
     # タスク名も一緒に表示したいのでTaskも取得
     task_map = {t.id: t for t in Task.query.all()}
-    return render_template('worklog_list.html', logs=logs, task_map=task_map)
+    projects = Project.query.all()
+    project_map = {pj.id: pj for pj in projects}
+    return render_template(
+        'worklog_list.html',
+        logs=logs,
+        task_map=task_map,
+        project_map=project_map
+
+        )
 
 # UI
 # ガントチャート用ルート追加
@@ -1024,6 +1124,7 @@ def worklog_page(worklog_id):
 def upload_image():
     file = request.files['image']
     worklog_id = request.form.get("worklog_id")
+    print("upload_image for worklog_id=", worklog_id)  # デバッグ用
     # 保存先パス
     folder = os.path.join("static", "files", f"worklog_{worklog_id}")
     os.makedirs(folder, exist_ok=True)
@@ -1081,6 +1182,13 @@ def update_project_progress(project_id):
         pj.progress = progress
         db.session.commit()
     return progress
+
+@app.route('/worklog/pin/<int:worklog_id>', methods=['POST'])
+def toggle_pin(worklog_id):
+    log = TaskWorkLog.query.get_or_404(worklog_id)
+    log.is_pinned = not log.is_pinned
+    db.session.commit()
+    return redirect(request.referrer or url_for('worklogs'))
 
 if __name__ == '__main__':
     with app.app_context():
