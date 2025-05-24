@@ -5,12 +5,26 @@
 
 <!-- タスク編集用モーダル -->
 <div class="modal fade" id="editTaskModal" tabindex="-1" role="dialog">
-  <div class="modal-dialog" role="document"><form id="editTaskForm" method="post">
+  <div class="modal-dialog" role="document"><form id="editTaskForm" method="post" action="javascript:void(0);">
     <div class="modal-content">
       <div class="modal-header"><h5 class="modal-title">タスク編集</h5>
         <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
       </div>
       <div class="modal-body">
+        
+        <label>プロジェクト</label>
+        <select name="project_id" id="edit_project_id" class="form-control mb-2">
+          {% for pj in projects %}
+            <option value="{{ pj.id }}">{{ pj.name }}</option>
+          {% endfor %}
+        </select>
+        <label>テーマ</label>
+        <select name="theme_id" id="edit_theme_id" class="form-control mb-2">
+          {% for th in themes %}
+            <option value="{{ th.id }}">{{ th.name }}</option>
+          {% endfor %}
+        </select>
+
         <input type="hidden" name="task_id" id="edit_task_id">
         <input type="text" name="title" id="edit_title" class="form-control mb-2" required>
         <textarea name="detail" id="edit_detail" class="form-control mb-2"></textarea>
@@ -24,7 +38,7 @@
           <option value="凍結">凍結</option>
         </select>
         <div class="form-check">
-          <input class="form-check-input" type="checkbox" name="is_completed" id="edit_is_completed">
+          <input class="form-check-input" type="checkbox" name="is_completed" id="edit_is_completed" disabled>
           <label class="form-check-label" for="edit_is_completed">完了</label>
         </div>
       </div>
@@ -72,6 +86,21 @@
         <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
       </div>
       <div class="modal-body">
+        
+          <label>プロジェクト</label>
+          <select name="project_id" id="add_project_id" class="form-control mb-2">
+            <option value="">--- 未選択 ---</option>
+            {% for pj in projects %}
+              <option value="{{ pj.id }}">{{ pj.name }}</option>
+            {% endfor %}
+          </select>
+          <label>テーマ</label>
+          <select name="theme_id" id="add_theme_id" class="form-control mb-2">
+            <option value="">--- 未選択 ---</option>
+            {% for th in themes %}
+              <option value="{{ th.id }}" data-project="{{ th.project_id }}">{{ th.name }}</option>
+            {% endfor %}
+          </select>
         <input type="text" name="title" class="form-control mb-2" placeholder="タイトル" required>
         <textarea name="detail" class="form-control mb-2" placeholder="詳細"></textarea>
         <input type="datetime-local" name="scheduled_start" class="form-control mb-2" placeholder="開始日時">
@@ -131,257 +160,352 @@
 <button id="undoBtn" class="btn btn-warning" style="position:fixed;right:20px;bottom:20px;z-index:999;">Undo</button>
 
 <script>
-    $('#undoBtn').on('click', function() {
-        $.post('/undo', {}, function(resp) {
-            if (resp.result === 'success') location.reload();
-            else alert(resp.message);
-        });
+function openEditTaskModal(taskId) {
+  $.get('/api/task/' + taskId, function(data) {
+    $('#edit_task_id').val(data.id);
+    $('#edit_title').val(data.title);
+    $('#edit_detail').val(data.detail);
+    $('#edit_scheduled_start').val(data.scheduled_start.slice(0,16));
+    $('#edit_scheduled_end').val(data.scheduled_end.slice(0,16));
+    $('#edit_weight').val(data.weight);
+    $('#edit_status').val(data.status);
+    $('#edit_is_completed').prop('checked', data.is_completed);
+    $('#edit_project_id').val(data.project_id);
+    $('#edit_theme_id').val(data.theme_id);
+    $('#editTaskModal').modal('show');
+    // Worklogボタンセット
+    if (data.worklog_ids && data.worklog_ids.length > 0) {
+      $('#worklogPageBtn').attr('href', '/worklog/page/' + data.worklog_ids[0]).show();
+    } else {
+      $('#worklogPageBtn').hide();
+    }
+  });
+}
+$('#undoBtn').on('click', function() {
+    $.post('/undo', {}, function(resp) {
+        if (resp.result === 'success') location.reload();
+        else alert(resp.message);
     });
+});
 
-    document.addEventListener('keydown', function(e) {
-        if (e.ctrlKey && e.key === 'z') {
-            $.post('/undo', function(res) { location.reload(); });
-        }
-        if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
-            $.post('/redo', function(res) { location.reload(); });
-        }
-    });
+// プロジェクト選択でテーマを動的に絞り込む
+$(document).on('change', '#add_project_id', function() {
+  var selectedProjectId = $(this).val();
+  $('#add_theme_id option').each(function(){
+    var pjId = $(this).data('project');
+    if (!selectedProjectId || !pjId || pjId == selectedProjectId) {
+      $(this).show();
+    } else {
+      $(this).hide();
+    }
+  });
+  // プロジェクト変更時はテーマ未選択に戻す
+  $('#add_theme_id').val('');
+});
 
-    document.addEventListener('DOMContentLoaded', function() {
-      let selectedTaskIds = [];
-      let splitTargetId = null;
+document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'z') {
+        $.post('/undo', function(res) { location.reload(); });
+    }
+    if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+        $.post('/redo', function(res) { location.reload(); });
+    }
+});
 
-    var calendarEl = document.getElementById('calendar');
-    var calendar = new FullCalendar.Calendar(calendarEl, {
-      initialView: 'timeGridWeek',
-      slotMinTime: "00:00:00",
-      slotMaxTime: "24:00:00",
-      allDaySlot: false,
-      locale: 'ja',
-      headerToolbar: {
-        left: 'prev,next today',
-        center: 'title',
-        right: 'dayGridMonth,timeGridWeek,timeGridDay'
-      },
-      editable: true,
-      selectable: true,
-      events: '/api/tasks',
+document.addEventListener('DOMContentLoaded', function() {
+  let selectedTaskIds = [];
+  let splitTargetId = null;
 
-      // v5ではeventDidMountに書き換え
-      eventDidMount: function(info) {
-        // Ctrl+左クリックで複数選択
-        info.el.addEventListener('click', function(e) {
-          if (e.ctrlKey) {
-            e.preventDefault();
-            let id = info.event.id;
-            let idx = selectedTaskIds.indexOf(id);
-            if (idx === -1) {
-              selectedTaskIds.push(id);
-              info.el.classList.add('selected');
-            } else {
-              selectedTaskIds.splice(idx, 1);
-              info.el.classList.remove('selected');
-            }
-            return;
-          }
-          
-          // Ctrlなし＝通常編集
-          // 編集モーダルを開く等の処理（ここは既存のeventClickと同じ）
-          var taskId = info.event.id;
-          $.get('/api/task/' + taskId, function(data) {
-            });
-          });
-        // 2. 右クリック（統合 or 分割）
-        info.el.addEventListener('contextmenu', function(e) {
-          if (selectedTaskIds.length > 1) {
-            console.log("merge対象:", selectedTaskIds); // ←ここ
-            e.preventDefault();
-            $('#merge_task_ids').val(selectedTaskIds.join(','));
-            $('#mergeTaskModal').modal('show');
-          } else if (e.shiftKey) {
-            // Shift+右クリック = 分割
-            e.preventDefault();
-            splitTargetId = info.event.id;
-            $('#splitTaskModal').modal('show');
-            $('#split_time').val(info.event.startStr.slice(0,16));
-            // 分割メニュー
-            e.preventDefault();
-            splitTargetId = info.event.id;
-            // 開始・終了をJSTで計算
-            let start = new Date(info.event.start.getTime());
-            let end = new Date(info.event.end.getTime());
-            let split = new Date((start.getTime() + end.getTime()) / 2);
-            // ISO形式(yyyy-MM-ddThh:mm)でinputへ
-            // yyyy-MM-ddTHH:mm (JST) でセット
-            function toJstDatetimeLocal(dt) {
-              const pad = n => n.toString().padStart(2, '0');
-              return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-            }
-            $('#split_time').val(toJstDatetimeLocal(split));
+  var calendarEl = document.getElementById('calendar');
+  var calendar = new FullCalendar.Calendar(calendarEl, {
+    initialView: 'timeGridWeek',
+    slotMinTime: "00:00:00",
+    slotMaxTime: "24:00:00",
+    allDaySlot: false,
+    locale: 'ja',
+    headerToolbar: {
+      left: 'prev,next today',
+      center: 'title',
+      right: 'dayGridMonth,timeGridWeek,timeGridDay'
+    },
+    editable: true,
+    selectable: true,
+    nowIndicator: true,
+    events: '/api/tasks',
 
-            // 追加：タイトル初期化
-            $('#split_title_a').val(info.event.title + '（前半）');
-            $('#split_title_b').val(info.event.title + '（後半）');
-            $('#splitTaskModal').modal('show');
-          } else{
-            // 通常の右クリック = 編集
-            e.preventDefault();
-            // 編集モーダル等を開く（例: 予定編集フォームを表示）
-            $.get('/api/task/' + info.event.id, function(data) {
-              // フォームにデータセット→モーダル表示
-              $('#edit_task_id').val(data.id);
-              $('#edit_title').val(data.title);
-              $('#edit_detail').val(data.detail);
-              $('#edit_scheduled_start').val(data.scheduled_start.slice(0,16));
-              $('#edit_scheduled_end').val(data.scheduled_end.slice(0,16));
-              $('#edit_weight').val(data.weight);
-              $('#edit_status').val(data.status);
-              $('#edit_is_completed').prop('checked', data.is_completed);
-              $('#editTaskModal').modal('show');
-            });
-          }
-        });
-      },
-
-      // 通常クリック（編集 or 実績記録）
-      eventClick: function(info) {
-        if (selectedTaskIds.length > 1) return; // 複数選択中は編集無効
-
-        // 既存予定タスククリック→「この予定で実績記録」
-        const taskId = info.event.id;
-        const startAt = info.event.start.toISOString().slice(0,16);
-        if (confirm("このタスクで実績記録を入力しますか？")) {
-          window.location.href = "/worklog/new?task_id=" + taskId + "&start_at=" + encodeURIComponent(startAt);
-        }
-        if (data.latest_worklog_id) {
-          $('#worklogPageBtn').attr('href', '/worklog/page/' + data.latest_worklog_id).show();
-        } else {
-          $('#worklogPageBtn').hide();
-        }
-        $('#editTaskModal').modal('show');
-      },
-      select: function(info) {
-        $('#addTaskModal').modal('show');
-        $('input[name="scheduled_start"]').val(info.startStr.slice(0,16));
-        $('input[name="scheduled_end"]').val(info.endStr ? info.endStr.slice(0,16) : "");
-      },
-
-      dateClick: function(info) {
-        const start_at = info.dateStr.length > 10 ? info.dateStr : info.dateStr + "T09:00";
-        window.location.href = "/worklog/new?start_at=" + encodeURIComponent(start_at);
-      },
-
-      eventDrop: function(info) {
-        // ドラッグ＆ドロップ後の日時更新
-        $.ajax({
-          url: '/task/update/' + info.event.id,
-          method: 'POST',
-          data: {
-            scheduled_start: info.event.start.toISOString(),
-            scheduled_end: info.event.end ? info.event.end.toISOString() : null
-          },
-          success: function() { calendar.refetchEvents(); }
-        });
-      },
-
-      eventResize: function(info) {
-        // リサイズ時の日時更新
-        $.ajax({
-          url: '/task/update/' + info.event.id,
-          method: 'POST',
-          data: {
-            scheduled_start: info.event.start.toISOString(),
-            scheduled_end: info.event.end ? info.event.end.toISOString() : null
-          },
-          success: function() { calendar.refetchEvents(); }
-        });
-      },
-
-    });
-
-    calendar.render();
   
-    // 分割ダイアログの送信
-    $('#splitTaskForm').on('submit', function(e) {
-      e.preventDefault();
-      let splitTime = $('#split_time').val();
-      $.post('/task/split/' + splitTargetId, { split_time: splitTime }, function(res) {
-        $('#splitTaskModal').modal('hide');
-        splitTargetId = null;
-        calendar.refetchEvents();
-      });
-    });
 
-    // 編集フォームの送信（保存）
-    $('#editTaskForm').on('submit', function(e) {
-      e.preventDefault();
-      var taskId = $('#edit_task_id').val();
-      var postData = $(this).serialize();
-      $.post('/task/update/' + taskId, postData, function() {
+  // v5ではeventDidMountに書き換え
+  eventDidMount: function(info) {
+    // Ctrl+左クリックで複数選択
+    info.el.addEventListener('click', function(e) {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        let id = info.event.id;
+        let idx = selectedTaskIds.indexOf(id);
+        if (idx === -1) {
+          selectedTaskIds.push(id);
+          info.el.classList.add('selected');
+        } else {
+          selectedTaskIds.splice(idx, 1);
+          info.el.classList.remove('selected');
+        }
+        return;
+      }
+      
+      // Ctrlなし＝通常編集
+      // 編集モーダルを開く等の処理（ここは既存のeventClickと同じ）
+      var taskId = info.event.id;
+      $.get('/api/task/' + taskId, function(data) {
+        });
+      });
+    // 2. 右クリック（統合 or 分割）
+    info.el.addEventListener('contextmenu', function(e) {
+      if (selectedTaskIds.length > 1) {
+        console.log("merge対象:", selectedTaskIds); // ←ここ
+        e.preventDefault();
+        $('#merge_task_ids').val(selectedTaskIds.join(','));
+        $('#mergeTaskModal').modal('show');
+      } else if (e.shiftKey) {
+        // Shift+右クリック = 分割
+        e.preventDefault();
+        splitTargetId = info.event.id;
+        $('#splitTaskModal').modal('show');
+        $('#split_time').val(info.event.startStr.slice(0,16));
+        // 分割メニュー
+        e.preventDefault();
+        splitTargetId = info.event.id;
+        // 開始・終了をJSTで計算
+        let start = new Date(info.event.start.getTime());
+        let end = new Date(info.event.end.getTime());
+        let split = new Date((start.getTime() + end.getTime()) / 2);
+        // ISO形式(yyyy-MM-ddThh:mm)でinputへ
+        // yyyy-MM-ddTHH:mm (JST) でセット
+        function toJstDatetimeLocal(dt) {
+          const pad = n => n.toString().padStart(2, '0');
+          return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+        }
+        $('#split_time').val(toJstDatetimeLocal(split));
+
+        // 追加：タイトル初期化
+        $('#split_title_a').val(info.event.title + '（前半）');
+        $('#split_title_b').val(info.event.title + '（後半）');
+        $('#splitTaskModal').modal('show');
+      } else{
+        // 通常の右クリック = 編集
+        e.preventDefault();
+        // 編集モーダル等を開く（例: 予定編集フォームを表示）
+        openEditTaskModal(info.event.id);
+        // $.get('/api/task/' + info.event.id, function(data) {
+        //   // フォームにデータセット→モーダル表示
+        //   $('#edit_task_id').val(data.id);
+        //   $('#edit_title').val(data.title);
+        //   $('#edit_detail').val(data.detail);
+        //   $('#edit_scheduled_start').val(data.scheduled_start.slice(0,16));
+        //   $('#edit_scheduled_end').val(data.scheduled_end.slice(0,16));
+        //   $('#edit_weight').val(data.weight);
+        //   $('#edit_status').val(data.status);
+        //   $('#edit_is_completed').prop('checked', data.is_completed);
+        //   $('#editTaskModal').modal('show');
+        // });
+      }
+    });
+  },
+
+  // 通常クリック（編集 or 実績記録）
+  eventClick: function(info) {
+    if (selectedTaskIds.length > 1) return; // 複数選択中は編集無効
+
+    // 既存予定タスククリック→「この予定で実績記録」
+    const data = info.event.extendedProps;
+    const startAt = info.event.start.toISOString().slice(0,16);
+    const taskId = info.event.id;
+    const worklogId = data.worklog_id;
+    if (confirm("このタスクで実績記録を入力しますか？")) {
+      window.location.href = "/worklog/new?task_id=" + taskId + "&start_at=" + encodeURIComponent(startAt);
+    }
+    if (data.latest_worklog_id) {
+      $('#worklogPageBtn').attr('href', '/worklog/page/' + data.latest_worklog_id).show();
+    } else {
+      $('#worklogPageBtn').hide();
+    }
+    if (worklogId) {
+    // if (data.worklog_ids && data.worklog_ids.length > 0) {
+        window.open('/worklog/page/' + worklogId, '_blank');
+    } else {
+        // 未作成の場合は実績入力フォームへ（現状維持）
+        const startAt = info.event.start ? info.event.start.toISOString().slice(0,16) : '';
+        window.location.href = `/worklog/new?task_id=${taskId}&start_at=${startAt}`;
+    }
+    $('#editTaskModal').modal('show');
+  },
+  select: function(info) {
+    $('#addTaskModal').modal('show');
+    $('input[name="scheduled_start"]').val(info.startStr.slice(0,16));
+    $('input[name="scheduled_end"]').val(info.endStr ? info.endStr.slice(0,16) : "");
+  },
+
+  dateClick: function(info) {
+    const start_at = info.dateStr.length > 10 ? info.dateStr : info.dateStr + "T09:00";
+    window.location.href = "/worklog/new?start_at=" + encodeURIComponent(start_at);
+  },
+
+  eventDrop: function(info) {
+    fetch('/task/update/' + info.event.id, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            scheduled_start: info.event.start.toISOString(),
+            scheduled_end: info.event.end ? info.event.end.toISOString() : ''
+        })
+    }).then(response => response.json()).then(data => {
+        // 必要に応じてリロードや通知
+        if(data.result !== "success") alert("保存失敗");
+    });
+  },
+
+  eventResize: function(info) {
+    fetch('/task/update/' + info.event.id, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            scheduled_start: info.event.start.toISOString(),
+            scheduled_end: info.event.end ? info.event.end.toISOString() : ''
+        })
+    }).then(response => response.json()).then(data => {
+        if(data.result !== "success") alert("保存失敗");
+    });
+  },
+
+  
+  });
+
+  calendar.render();
+
+  calendar.on('eventClick', function(info) {
+    const event = info.event;
+    const worklogId = event.extendedProps.worklog_id;
+    if (worklogId) {
+      // 作業実績ページへダイレクト遷移
+      window.location.href('/worklog/page/' + worklogId, '_blank');
+    } else {
+      // 実績入力フォームへ（タスクIDと開始時刻付き）
+      const startAt = event.start ? event.start.toISOString().slice(0,16) : '';
+      window.location.href(`/worklog/new?task_id=${event.id}&start_at=${startAt}`, '_blank');
+    }
+  });
+  
+  // 編集フォーム送信処理
+  $('#editTaskForm').off('submit').on('submit', function(e) {
+    e.preventDefault();
+    var taskId = $('#edit_task_id').val();
+    if (!taskId) {
+      alert('taskIdが正しくセットされていません。');
+      return false;
+    }
+    var postData = $(this).serialize();
+    $.post('/task/update/' + taskId, postData, function() {
+      $('#editTaskModal').modal('hide');
+      calendar.refetchEvents();
+    }).fail(function(xhr, status, error) {
+      alert('タスクの更新に失敗しました: ' + error);
+    });
+  });
+
+  // 分割ダイアログの送信
+  $('#splitTaskForm').on('submit', function(e) {
+    e.preventDefault();
+    let splitTime = $('#split_time').val();
+    $.post('/task/split/' + splitTargetId, { split_time: splitTime }, function(res) {
+      $('#splitTaskModal').modal('hide');
+      splitTargetId = null;
+      calendar.refetchEvents();
+    });
+  });
+
+    // // 編集フォームの送信（保存）
+    // $('#editTaskForm').on('submit', function(e) {
+    //   e.preventDefault();
+    //   var taskId = $('#edit_task_id').val();
+    //   var postData = $(this).serialize();
+    //   $.post('/task/update/' + taskId, postData, function() {
+    //     $('#editTaskModal').modal('hide');
+    //     calendar.refetchEvents();
+    //   });
+    // });
+
+  // 削除ボタン
+  $('#deleteTaskBtn').on('click', function() {
+    var taskId = $('#edit_task_id').val();
+    if(confirm('本当に削除しますか？')) {
+      $.post('/api/task/delete/' + taskId, function() {
         $('#editTaskModal').modal('hide');
         calendar.refetchEvents();
       });
-    });
+    }
+  });
 
-    // 削除ボタン
-    $('#deleteTaskBtn').on('click', function() {
-      var taskId = $('#edit_task_id').val();
-      if(confirm('本当に削除しますか？')) {
-        $.post('/api/task/delete/' + taskId, function() {
-          $('#editTaskModal').modal('hide');
-          calendar.refetchEvents();
-        });
+  $('#mergeTaskForm').on('submit', function(e) {
+    console.log("POSTする task_ids:", $('#merge_task_ids').val());
+    e.preventDefault();
+    var task_ids = $('#merge_task_ids').val();
+    // ここで「#mergeTaskForm」内のtitle inputを取得
+    var title = $('#mergeTaskForm input[name="title"]').val();
+    var scheduled_start = $('#mergeTaskForm input[name="scheduled_start"]').val();
+    var scheduled_end = $('#mergeTaskForm input[name="scheduled_end"]').val();
+
+    $.post({
+      url: '/tasks/merge',
+      data: {
+        task_ids: task_ids,
+        title: title,
+        scheduled_start: scheduled_start,
+        scheduled_end: scheduled_end
       }
-    });
-
-    $('#mergeTaskForm').on('submit', function(e) {
-      console.log("POSTする task_ids:", $('#merge_task_ids').val());
-      e.preventDefault();
-      var task_ids = $('#merge_task_ids').val();
-      // ここで「#mergeTaskForm」内のtitle inputを取得
-      var title = $('#mergeTaskForm input[name="title"]').val();
-      var scheduled_start = $('#mergeTaskForm input[name="scheduled_start"]').val();
-      var scheduled_end = $('#mergeTaskForm input[name="scheduled_end"]').val();
-
-      $.post({
-        url: '/tasks/merge',
-        data: {
-          task_ids: task_ids,
-          title: title,
-          scheduled_start: scheduled_start,
-          scheduled_end: scheduled_end
-        }
-      }).done(function(res) {
-        if(res.result === "success") {
-          // 統合成功
-          window.location.href = res.redirect;
-        }
-      }).fail(function(xhr) {
-        let msg = "統合に失敗しました";
-        if(xhr.responseJSON && xhr.responseJSON.message){
-          msg = xhr.responseJSON.message;
-        }
-        alert(msg);
-        $('#mergeTaskModal').modal('hide');
-        // 必要なら画面をリロード、または何もしない（モーダル閉じるだけ）
-      });
-    });
-
-    // タスククリック時などにAPIでtaskのworklog_idを取得
-    $.get('/api/task/' + taskId, function(data) {
-      // ... 既存の編集モーダルセット処理 ...
-      // もし作業実績があればボタンを表示＆リンクセット
-      if(data.worklog_ids && data.worklog_ids.length > 0){
-        $('#worklogPageBtn').attr('href', '/worklog/page/' + data.worklog_ids[0]);
-        $('#worklogPageBtn').show();
-      }else{
-        $('#worklogPageBtn').hide();
+    }).done(function(res) {
+      if(res.result === "success") {
+        // 統合成功
+        window.location.href = res.redirect;
       }
-    });
-
-    $('#addTaskModal').on('hidden.bs.modal', function () {
-      calendar.unselect(); // 選択状態を解除
+    }).fail(function(xhr) {
+      let msg = "統合に失敗しました";
+      if(xhr.responseJSON && xhr.responseJSON.message){
+        msg = xhr.responseJSON.message;
+      }
+      alert(msg);
+      $('#mergeTaskModal').modal('hide');
+      // 必要なら画面をリロード、または何もしない（モーダル閉じるだけ）
     });
   });
+
+
+  $('#addTaskModal').on('hidden.bs.modal', function () {
+    calendar.unselect(); // 選択状態を解除
+  });
+});
+
+// 編集フォームをセットしモーダルを表示
+function openEditTaskModal(taskId) {
+  $.get('/api/task/' + taskId, function(data) {
+    $('#edit_task_id').val(data.id);
+    $('#edit_title').val(data.title);
+    $('#edit_detail').val(data.detail);
+    $('#edit_scheduled_start').val(data.scheduled_start.slice(0,16));
+    $('#edit_scheduled_end').val(data.scheduled_end.slice(0,16));
+    $('#edit_weight').val(data.weight);
+    $('#edit_status').val(data.status);
+    $('#edit_is_completed').prop('checked', data.is_completed);
+    $('#edit_project_id').val(data.project_id);
+    $('#edit_theme_id').val(data.theme_id);
+    $('#editTaskModal').modal('show');
+    // Worklogボタンセット
+    if (data.worklog_ids && data.worklog_ids.length > 0) {
+      $('#worklogPageBtn').attr('href', '/worklog/page/' + data.worklog_ids[0]).show();
+    } else {
+      $('#worklogPageBtn').hide();
+    }
+  });
+}
+
 </script>
 {% endblock %}

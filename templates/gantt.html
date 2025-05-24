@@ -2,10 +2,6 @@
 {% block content %}
 <h2>ガントチャート</h2>
 
-<!-- head内に追加 -->
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-
 <!--  プロジェクト絞り込み -->
 <div class="mb-2">
   <label for="project-select">プロジェクト選択：</label>
@@ -66,7 +62,7 @@
             <option value="凍結">凍結</option>
           </select>
           <div class="form-check">
-            <input class="form-check-input" type="checkbox" name="is_completed" id="edit_is_completed">
+            <input class="form-check-input" type="checkbox" name="is_completed" id="edit_is_completed" disabled>
             <label class="form-check-label" for="edit_is_completed">完了</label>
           </div>
         </div>
@@ -135,7 +131,26 @@ function drawGantt(data, mode) {
                 $('#edit_is_completed').prop('checked', data.is_completed);
                 $('#editTaskModal').modal('show');
             });
+        },
+        on_date_change: function(task, start, end) {
+          if (task.id.startsWith('task-')) {
+            let numericId = task.id.replace('task-', '');
+            fetch('/task/update/' + numericId, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({
+                  scheduled_start: start instanceof Date ? start.toISOString() : start,
+                  scheduled_end: end instanceof Date ? end.toISOString() : end
+              })
+            }).then(response => response.json()).then(data => {
+              if(data.result !== "success") alert("保存失敗");
+            });
+          } else {
+            alert('プロジェクトやテーマは移動できません');
+            reloadGantt();
+          }
         }
+
     });
 
 }
@@ -150,6 +165,7 @@ function reloadGantt() {
         drawGantt(allData, currentMode);
     });
 }
+
 
 $(function() {
     $('#project-select').select2({

@@ -1,8 +1,58 @@
-<div class="mb-3">
-  <label>進捗：</label>
-  <div class="progress" style="height: 24px;">
-    <div class="progress-bar" role="progressbar" style="width: {{ progress }}%;" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100">
-      {{ progress }}%
-    </div>
+{% extends "base.html" %}
+{% block content %}
+<h2>テーマ詳細</h2>
+<div class="card p-3 mb-3">
+  <h4>{{ theme.name }}</h4>
+  <p>所属プロジェクト: 
+    {% if project %}
+      <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:{{ project.color if project.color else '#bbb' }};margin-right:6px;vertical-align:middle;border:1px solid #888"></span>
+      {{ project.name }}
+    {% else %}
+      未割当
+    {% endif %}
+  </p>
+  <div>
+    <strong>説明:</strong> {{ theme.description or '' }}
+  </div>
+  <div>
+    <strong>進捗:</strong> {{ theme.progress or 0 }} %
   </div>
 </div>
+
+<!-- 新規タスク作成ボタン -->
+<a href="{{ url_for('create_task', project_id=project.id if project else '', theme_id=theme.id) }}" class="btn btn-primary mb-3">+ 新規タスク作成</a>
+
+<table class="table table-bordered table-hover">
+  <thead class="thead-light">
+    <tr>
+      <th>タイトル</th>
+      <th>予定開始</th>
+      <th>予定終了</th>
+      <th>進捗</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr>
+      <td>{{ task.title }}</td>
+      <td>{{ task.scheduled_start.strftime('%Y-%m-%d %H:%M') if task.scheduled_start else '' }}</td>
+      <td>{{ task.scheduled_end.strftime('%Y-%m-%d %H:%M') if task.scheduled_end else '' }}</td>
+      <td>{{ task.status }}</td>
+      <td>
+        <!-- 編集 -->
+        <a href="{{ url_for('edit_task', task_id=task.id) }}" class="btn btn-sm btn-secondary">編集</a>
+        <!-- 削除 -->
+        <a href="{{ url_for('delete_task', task_id=task.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('本当に削除しますか？')">削除</a>
+        <!-- 作業ページ -->
+        {% if worklog_map[task.id] %}
+          <a href="{{ url_for('worklog_page', worklog_id=worklog_map[task.id].id) }}" class="btn btn-sm btn-info">作業ページ</a>
+        {% else %}
+          <a href="{{ url_for('new_worklog') }}?task_id={{ task.id }}&start_at={{ task.scheduled_start.strftime('%Y-%m-%dT%H:%M') if task.scheduled_start else '' }}" class="btn btn-sm btn-outline-info">作業実績入力</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
